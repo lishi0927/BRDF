@@ -14,6 +14,13 @@ struct Vertex
 
 	Vertex(){}
 
+	Vertex(const glm::vec3 pos, const glm::vec2& tex, const glm::vec3& normal)
+	{
+		m_pos = pos;
+		m_tex = tex;
+		m_normal = normal;
+	}
+
 	Vertex(glm::vec3 pos, glm::vec2 tex)
 	{
 		m_pos = pos;

@@ -18,7 +18,6 @@ using namespace glm;
 
 #include "ground.h"
 #include "shader.hpp"
-#include "diffuselight.h"
 #include "texture.hpp"
 #include "controls.hpp"
 #include "objloader.hpp"
@@ -26,8 +25,22 @@ using namespace glm;
 #define WINDOW_WIDTH 1024
 #define WINDOW_HEIGHT 768
 
+#define COOK_Torrance
 
-DirectionalLight m_directionalLight;
+#ifdef DIFFUSE_LIGHT
+#include "diffuselight.h"
+
+#endif
+
+#ifdef SPECULAR_LIGHT
+#include "specularlight.h"
+#endif
+
+#ifdef COOK_Torrance
+#include "brdf_cooktorrance.h"
+float m_scale;
+#endif
+
 Texture* m_pTexture;
 
 GLuint VertexArrayID;
@@ -37,12 +50,28 @@ GLuint normalbuffer;
 int verticenumber;
 
 
-void LightInit()
+static const float FieldDepth = 20.0f;
+static const float FieldWidth = 10.0f;
+
+GLuint m_VBO;
+
+void CreateVertexBuffer()
 {
-	m_directionalLight.Color = glm::vec3(1.0f, 1.0f, 1.0f);
-	m_directionalLight.AmbientIntensity = 0.01f;
-	m_directionalLight.DiffuseIntensity = 0.75f;
-	m_directionalLight.Direction = glm::vec3(1.0f, 0.0, 0.0);
+	const glm::vec3 Normal = glm::vec3(0.0, 1.0f, 0.0f);
+
+	Vertex Vertices[6] = {
+		Vertex(glm::vec3(0.0f, 0.0f, 0.0f),             glm::vec2(0.0f, 0.0f), Normal),
+		Vertex(glm::vec3(0.0f, 0.0f, FieldDepth),       glm::vec2(0.0f, 1.0f), Normal),
+		Vertex(glm::vec3(FieldWidth, 0.0f, 0.0f),       glm::vec2(1.0f, 0.0f), Normal),
+
+		Vertex(glm::vec3(FieldWidth, 0.0f, 0.0f),       glm::vec2(1.0f, 0.0f), Normal),
+		Vertex(glm::vec3(0.0f, 0.0f, FieldDepth),       glm::vec2(0.0f, 1.0f), Normal),
+		Vertex(glm::vec3(FieldWidth, 0.0f, FieldDepth), glm::vec2(1.0f, 1.0f), Normal)
+	};
+
+	glGenBuffers(1, &m_VBO);
+	glBindBuffer(GL_ARRAY_BUFFER, m_VBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(Vertices), Vertices, GL_STATIC_DRAW);
 }
 
 void init()
@@ -56,16 +85,13 @@ void init()
 	// Cull triangles which normal is not towards the camera
 	glEnable(GL_CULL_FACE);
 
+	CreateVertexBuffer();
+
+
 	glGenVertexArrays(1, &VertexArrayID);
 	glBindVertexArray(VertexArrayID);
+	/*
 
-	Diffuseshader.shader = LoadShaders("shader/diffuse_vert.glsl", "shader/diffuse_fragment.glsl");
-
-	if (!Diffuseshader.Init())
-	{
-		std::cout << "DiffuseShader ERROR!" << std::endl;
-		exit(-1);
-	}
 	// Load the texture
 	// TextureI = loadDDS("uvmap.DDS");
 	// Read our .obj file
@@ -90,15 +116,55 @@ void init()
 	glBindBuffer(GL_ARRAY_BUFFER, normalbuffer);
 	glBufferData(GL_ARRAY_BUFFER, normals.size() * sizeof(glm::vec3), &normals[0], GL_STATIC_DRAW);
 
-	Diffuseshader.Enable();
-
-	Diffuseshader.SetTextureUnit(0);
-
 	vertices.clear();
 	uvs.clear();
 	normals.clear();
+	*/
+#ifdef DIFFUSE_LIGHT
+	Diffuseshader.shader = LoadShaders("shader/diffuse_vert.glsl", "shader/diffuse_fragment.glsl");
 
-	m_pTexture = new Texture(GL_TEXTURE_2D, "uvmap.DDS");
+	if (!Diffuseshader.Init())
+	{
+		std::cout << "DiffuseShader ERROR!" << std::endl;
+		exit(-1);
+	}
+
+	Diffuseshader.Enable();
+
+	Diffuseshader.SetTextureUnit(0);
+#endif
+
+#ifdef SPECULAR_LIGHT
+	SpecularShader.shader = LoadShaders("shader/specular_vert.glsl", "shader/specular_fragment.glsl");
+	if (!SpecularShader.Init())
+	{
+		std::cout << "SpecularShader ERROR!" << std::endl;
+		exit(-1);
+	}
+
+	SpecularShader.Enable();
+
+	SpecularShader.SetTextureUnit(0);
+#endif
+
+#ifdef COOK_Torrance
+	m_scale = 0;
+
+	CookShader.shader = LoadShaders("shader/cooktorrance_vert.glsl", "shader/cooktorrance_fragment.glsl");
+	if (!CookShader.Init())
+	{
+		std::cout << "CookTorrance Error!" << std::endl;
+		exit(-1);
+	}
+
+	CookShader.Enable();
+	CookShader.SetTextureUnit(0);
+
+#endif
+
+
+
+	m_pTexture = new Texture(GL_TEXTURE_2D, "test.png");
 
 	if (!m_pTexture->Load()) {
 		std::cout << "Texture ERROR!" << std::endl;
@@ -113,7 +179,7 @@ void render()
 	// Clear the screen
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	Diffuseshader.Enable();
+	
 
 	// Compute the MVP matrix from keyboard and mouse input
 	computeMatricesFromInputs();
@@ -121,15 +187,52 @@ void render()
 	glm::mat4 ViewMatrix = getViewMatrix();
 	glm::mat4 ModelMatrix = glm::mat4(1.0);
 	glm::mat4 MVP = ProjectionMatrix * ViewMatrix * ModelMatrix;
+	glm::vec3 camerapos = getCameraPosition();
 
+#ifdef DIFFUSE_LIGHT
+	Diffuseshader.Enable();
 	Diffuseshader.SetWVP(MVP);
 	Diffuseshader.SetWorldMatrix(ModelMatrix);
 	Diffuseshader.SetDirectionalLight(m_directionalLight);
+#endif
+#ifdef SPECULAR_LIGHT
+	SpecularShader.Enable();
+	SpecularShader.SetWVP(MVP);
+	SpecularShader.SetWorldMatrix(ModelMatrix);
+	SpecularShader.SetDirectionalLight(m_directionalLight);
+	SpecularShader.SetEyeWorldPos(camerapos);
+	SpecularShader.SetMatSpecularIntensity(1.0f);
+	SpecularShader.SetMatSpecularPower(32);
+#endif
+
+#ifdef COOK_Torrance
+	m_scale += 0.0057f;
+	PointLight pl[2];
+	pl[0].DiffuseIntensity = 0.5f;
+	pl[0].Color = glm::vec3(1.0f, 0.5f, 0.0f);
+	pl[0].Position = glm::vec3(3.0f, 1.0f, 20 * (cosf(m_scale) + 1.0f) / 2.0f);
+	pl[0].Attenuation.Linear = 0.1f;
+	pl[1].DiffuseIntensity = 0.5f;
+	pl[1].Color = glm::vec3(0.0f, 0.5f, 1.0f);
+	pl[1].Position = glm::vec3(7.0f, 1.0f, 20 * (sinf(m_scale) + 1.0f) / 2.0f);
+	pl[1].Attenuation.Linear = 0.1f;
 
 
+//	CookShader.Enable();
+	CookShader.SetPointLights(2, pl);
+	CookShader.SetWVP(MVP);
+	CookShader.SetWorldMatrix(ModelMatrix);
+	CookShader.SetDirectionalLight(m_directionalLight);
+	CookShader.SetEyeWorldPos(camerapos);
+	CookShader.SetRoughness(0.3);
+	CookShader.SetFresnel(0.8);
+	CookShader.SetGK(0.2);
+#endif
 
-	m_pTexture->Bind(GL_TEXTURE0);
+//	m_pTexture->Bind(GL_TEXTURE0);
 
+
+/*
 	// 1rst attribute buffer : vertices
 	glEnableVertexAttribArray(0);
 	glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
@@ -172,7 +275,20 @@ void render()
 	glDisableVertexAttribArray(0);
 	glDisableVertexAttribArray(1);
 	glDisableVertexAttribArray(2);
+*/
+	glEnableVertexAttribArray(0);
+	glEnableVertexAttribArray(1);
+	glEnableVertexAttribArray(2);
+	glBindBuffer(GL_ARRAY_BUFFER, m_VBO);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), 0);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (const GLvoid*)12);
+	glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (const GLvoid*)20);
+	m_pTexture->Bind(GL_TEXTURE0);
+	glDrawArrays(GL_TRIANGLES, 0, 6);
 
+	glDisableVertexAttribArray(0);
+	glDisableVertexAttribArray(1);
+	glDisableVertexAttribArray(2);
 }
 
 void keyCallback(GLFWwindow *window, int key, int scancode, int action, int mods) {

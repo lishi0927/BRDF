@@ -20,10 +20,12 @@ glm::mat4 getProjectionMatrix(){
 }
 
 
+
+
 // Initial position : on +Z
-glm::vec3 position = glm::vec3( 0, 0, 5);
+glm::vec3 position = glm::vec3( 5, 1, -3);
 // Initial horizontal angle : toward -Z
-float horizontalAngle = 3.14f;
+float horizontalAngle = 0.0f;
 // Initial vertical angle : none
 float verticalAngle = 0.0f;
 // Initial Field of View
@@ -32,7 +34,10 @@ float initialFoV = 45.0f;
 float speed = 3.0f; // 3 units / second
 float mouseSpeed = 0.005f;
 
-
+glm::vec3 getCameraPosition()
+{
+	return position;
+}
 
 void computeMatricesFromInputs(){
 
